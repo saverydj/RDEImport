@@ -66,8 +66,16 @@
     <Reference Include="AppDataPath">
       <HintPath>T:\AppDataPath.dll</HintPath>
     </Reference>
+    <Reference Include="ApplicationManagerItf, Version=1.10.51.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\..\..\..\..\..\..\..\..\Program Files (x86)\SRH Systems\STARS\ApplicationManagerItf.dll</HintPath>
+    </Reference>
     <Reference Include="Caliburn.PresentationFramework">
       <HintPath>T:\Caliburn.PresentationFramework.dll</HintPath>
+    </Reference>
+    <Reference Include="DataDistributionItf, Version=1.10.51.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>T:\DataDistributionItf.dll</HintPath>
     </Reference>
     <Reference Include="Infralution.Localization.Wpf">
       <HintPath>T:\Infralution.Localization.Wpf.dll</HintPath>
@@ -77,6 +85,10 @@
     </Reference>
     <Reference Include="PresentationCore" />
     <Reference Include="PresentationFramework" />
+    <Reference Include="ResourcesItf, Version=1.10.51.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>T:\ResourcesItf.dll</HintPath>
+    </Reference>
     <Reference Include="STARS.Applications.Interfaces">
       <HintPath>T:\STARS.Applications.Interfaces.dll</HintPath>
     </Reference>
@@ -101,6 +113,7 @@
     </Reference>
     <Reference Include="System.configuration" />
     <Reference Include="System.Core" />
+    <Reference Include="System.Runtime.Serialization" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.XML" />
     <Reference Include="WindowsBase" />
@@ -110,12 +123,17 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Config.cs" />
     <Compile Include="ImportData.cs" />
     <Compile Include="Properties\Resources.Designer.cs">
       <AutoGen>True</AutoGen>
       <DesignTime>True</DesignTime>
       <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
+    <Compile Include="FileContents.cs" />
+    <Compile Include="Properties\Settings.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTimeSharedInput>True</DesignTimeSharedInput>
+      <DependentUpon>Settings.settings</DependentUpon>
     </Compile>
     <Compile Include="S:\STSHARE\CoreAssemblyInfo.cs">
       <Link>Properties\CoreAssemblyInfo.cs</Link>
@@ -123,7 +141,17 @@
     <Compile Include="S:\STSHARE\CoreAssemblyVersion.cs">
       <Link>Properties\CoreAssemblyVersion.cs</Link>
     </Compile>
-    <Compile Include="TypeCast.cs" />
+    <Compile Include="Tools For Reuse\Config.cs" />
+    <Compile Include="Tools For Reuse\EntityTypeIDs.cs" />
+    <Compile Include="Tools For Reuse\ExtendedEntityManager.cs" />
+    <Compile Include="Tools For Reuse\MEF.cs" />
+    <Compile Include="Tools For Reuse\ObjectExtensions.cs" />
+    <Compile Include="Tools For Reuse\OnlineResources.cs" />
+    <Compile Include="Tools For Reuse\SwapView.cs" />
+    <Compile Include="Tools For Reuse\UnitMod.cs" />
+    <Compile Include="Tools For Reuse\SystemLogServices.cs" />
+    <Compile Include="Tools For Reuse\TypeCast.cs" />
+    <Compile Include="TraceColumn.cs" />
     <Compile Include="ViewModels\Home\HomeViewCommandViewModel.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
@@ -141,6 +169,13 @@
     <None Include="App.config">
       <SubType>Designer</SubType>
     </None>
+    <None Include="Properties\Settings.settings">
+      <Generator>SettingsSingleFileGenerator</Generator>
+      <LastGenOutput>Settings.Designer.cs</LastGenOutput>
+    </None>
+    <None Include="Resources\ShiftTableA.dat" />
+    <None Include="Resources\ShiftTableM.dat" />
+    <None Include="Resources\testProcedure.dat" />
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Images\color_image_16.png" />

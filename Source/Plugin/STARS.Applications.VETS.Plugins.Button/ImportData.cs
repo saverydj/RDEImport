@@ -1,23 +1,19 @@
 ﻿using System;
-using System.Windows.Forms;
-using System.Collections.Generic;
-using System.Linq;
-using STARS.Applications.Interfaces.Dialogs;
-using System.ComponentModel.Composition;
-using STARS.Applications.VETS.Plugins.RDEImportTool.Properties;
-using STARS.Applications.Interfaces.EntityManager;
-using STARS.Applications.VETS.Interfaces;
-using STARS.Applications.VETS.UI.Controls;
-using STARS.Applications.VETS.Interfaces.Entities;
 using System.IO;
-using STARS.Applications.VETS.Interfaces.EntityProperties.TestProcedure;
-using System.Runtime.InteropServices;
+using System.Linq;
+using ToolsForReuse;
 using System.Threading;
-
+using System.Windows.Forms;
+using Stars.ApplicationManager;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using STARS.Applications.Interfaces.Dialogs;
+using STARS.Applications.VETS.Interfaces.Entities;
+using STARS.Applications.VETS.Plugins.RDEImportTool.Properties;
+using STARS.Applications.VETS.Interfaces.EntityProperties.TestProcedure;
 
 namespace STARS.Applications.VETS.Plugins.RDEImportTool
 {
-    [Export(typeof(ImportData))]
     class ImportData
     {
 
@@ -33,56 +29,47 @@ namespace STARS.Applications.VETS.Plugins.RDEImportTool
         #endregion
 
         const string IllegalChars = "~!@#$%^&*()-+=|\\{}[]\"'<>?/:,._";
-        private readonly IDialogService _dialogService;
-        private readonly IEntityCreate _entityCreate;
         private List<string> _filePaths = new List<string>();
 
-        [ImportingConstructor]
-        public ImportData(IDialogService dialogService, IEntityCreate entityCreate)
+        public ImportData()
         {
-            _dialogService = dialogService;
-            _entityCreate = entityCreate;
         }
 
         public void Import()
         {
             _filePaths.Clear();
+            SelectUsage();
+            CreateEntities();
+        }
 
+        /// <summary>
+        /// Gets the library resource tree node
+        /// </summary>
+        /// <returns>The library resource folder</returns>
+        private IAppFolder GetLibraryFolder(string path)
+        {
+            var libraryFolder = MEF.StarsApplication.GetResourceByFullName(path);
+
+            return libraryFolder as IAppFolder;
+        }
+
+        #region RDE
+
+        private void SelectUsage()
+        {
             if (Config.AskToRunExe)
             {
-                var result = _dialogService.PromptUser(Resources.Title, Resources.Message, DialogIcon.Question, DialogButton.Yes, DialogButton.Yes, DialogButton.No, DialogButton.Cancel);
+                var result = MEF.DialogService.PromptUser(Resources.Title, Resources.Message, DialogIcon.Question, DialogButton.Yes, DialogButton.Yes, DialogButton.No, DialogButton.Cancel);
                 if (result == DialogButton.Yes)
                 {
                     InvokeRDETool();
-                    if(Config.ShowCase)ParseRDELog();
+                    if (Config.ShowCase) ParseRDELog();
                     else ChooseFilesForImport();
                 }
-                else if (result == DialogButton.No)
-                {
-                    ChooseFilesForImport();
-                }
-                else
-                {
-                    return;
-                }
+                else if (result == DialogButton.No) ChooseFilesForImport();
+                else return;
             }
-            else
-            {
-                InvokeRDETool();
-            }
-
-            if (_filePaths != null && _filePaths.Count > 0)
-            {
-                Trace newTrace;
-                foreach (string filePath in _filePaths)
-                {
-                    newTrace = new Trace();
-                    SetTraceProperties(newTrace, filePath);
-                    _entityCreate.Create("EntityUris.VETSTRACE.Trace", newTrace.Properties, new TimeSpan());
-                }
-                _dialogService.PromptUser(Resources.Title, "RDE trace data was sucessfully imported.", DialogIcon.Information, DialogButton.OK, DialogButton.OK);
-            }
-
+            else InvokeRDETool();
         }
 
         private void InvokeRDETool()
@@ -156,11 +143,11 @@ namespace STARS.Applications.VETS.Plugins.RDEImportTool
         {
             OpenFileDialog openFileDialog1 = new OpenFileDialog();
 
-            openFileDialog1.Filter = "Text Files (*.txt, *.csv)|*.txt;*.csv";
+            openFileDialog1.Filter = "Text Files (*.txt)|*.txt";
             openFileDialog1.FilterIndex = 1;
             openFileDialog1.RestoreDirectory = true;
             openFileDialog1.Multiselect = true;
-            if (Directory.Exists(Config.LastOpenedFilePath)) openFileDialog1.InitialDirectory = Config.LastOpenedFilePath;
+            if (Directory.Exists(Settings.Default["LastOpenedFilePath"].ToString())) openFileDialog1.InitialDirectory = Settings.Default["LastOpenedFilePath"].ToString();
             else openFileDialog1.InitialDirectory = @"C:\";
 
             if (openFileDialog1.ShowDialog(new Form { TopMost = true }) == DialogResult.OK)
@@ -173,7 +160,8 @@ namespace STARS.Applications.VETS.Plugins.RDEImportTool
                         _filePaths.Add(filePath);
                         if(filePath == openFileDialog1.FileNames.Last())
                         {
-                            Config.LastOpenedFilePath = Path.GetDirectoryName(filePath);
+                            Settings.Default["LastOpenedFilePath"] = Path.GetDirectoryName(filePath);
+                            Settings.Default.Save();
                         }
                     }
                 }
@@ -184,176 +172,270 @@ namespace STARS.Applications.VETS.Plugins.RDEImportTool
             }
         }
 
-        private void SetTraceProperties(Trace newTrace, string filePath)
+        private FileContents GetFileContents(string filePath)
         {
-            SetTraceName(newTrace, filePath);
-            SetTraceVectorData(newTrace, filePath);
-        }
+            string[] fileLines;
 
-        private void SetTraceName(Trace newTrace, string filePath)
-        {
-            string fileName = Path.GetFileNameWithoutExtension(filePath);
-            foreach (char c in IllegalChars)
-            {
-                if (fileName.Contains(c.ToString()))
-                {
-                    fileName = fileName.Replace(c.ToString(), "");
-                }
-            }
-            newTrace.Name = fileName;
-        }
-
-        private void SetTraceVectorData(Trace newTrace, string filePath)
-        {
             string fileExtension = Path.GetExtension(filePath);
-            if (String.Compare(fileExtension, ".txt") != 0 && String.Compare(fileExtension, ".csv") != 0)
+            if (fileExtension != ".txt")
             {
-                throw new System.Exception("RDE resource file " + filePath + " must be either a txt or csv file.");
+                throw new System.Exception("RDE resource file " + filePath + " must be a txt file.");
             }
 
-            string[] fileContents;
             try
             {
-                fileContents = File.ReadAllLines(filePath);
+                fileLines = File.ReadAllLines(filePath);
             }
             catch (Exception ex)
             {
                 throw new System.Exception("Error: Could not read RDE resource file. Original error: " + ex.Message);
             }
 
-            if (fileContents == null || fileContents.Length == 0)
+            if (fileLines == null || fileLines.Length == 0)
             {
                 throw new System.Exception("Error: RDE resource file is empty.");
             }
 
-            if (fileExtension == ".txt")
-            {               
-                SetTraceVectorDataFromTxt(newTrace, filePath);
-            }
-            else if (fileExtension == ".csv")
+            bool isValid = false;
+            for (int i = 0; i < fileLines.Length; i++)
             {
-                SetTraceVectorDataFromCSV(newTrace, filePath);
-            }
-        }
-
-        private void SetTraceVectorDataFromTxt(Trace newTrace, string filePath)
-        {
-            string[] fileContents = File.ReadAllLines(filePath);
-            int startOfData = fileContents.Length;
-            int timeIndex = -1;
-            int speedIndex = -1;
-            double speedMod;
-
-            for (int i = 0; i < fileContents.Length; i++)
-            {
-                if (fileContents[i].Contains("time") && fileContents[i].Contains("speed"))
-                {
-                    for (int j = 0; j < fileContents[i].Split(',').Length; j++)
-                    {
-                        if (fileContents[i].Split(',')[j].Contains("time")) timeIndex = j;
-                        else if (fileContents[i].Split(',')[j].Contains("speed")) speedIndex = j;
-                    }
-                    startOfData = i + 2;
-                    break;
-                }
+                if (fileLines[i].Contains("time") && fileLines[i].Contains("speed")) isValid = true;
             }
 
-            if (timeIndex < 0 || speedIndex < 0)
+            if (!isValid)
             {
                 throw new System.Exception("Error: RDE text file " + filePath + " does not contain time and speed information");
             }
 
-            if (fileContents[startOfData - 1].Split(',')[speedIndex].Contains("mi/h")) speedMod = 2.23694;
-            else if (fileContents[startOfData - 1].Split(',')[speedIndex].Contains("m/s")) speedMod = 1;
-            else speedMod = 3.6;
-
-            double[] time = new double[fileContents.Length - startOfData];
-            double[] speed = new double[fileContents.Length - startOfData];
-
-            for (int i = 0; i < fileContents.Length - startOfData; i++)
-            {
-                time[i] = Convert.ToDouble(fileContents[i + startOfData].Split(',')[timeIndex]);
-                speed[i] = Convert.ToDouble(fileContents[i + startOfData].Split(',')[speedIndex]) / speedMod;
-            }
-
-            newTrace.Vectors[0].Data = time.Cast<object>().ToArray(); 
-            newTrace.Vectors[1].Data = speed.Cast<object>().ToArray();
-
-            string slopeFilePath = Path.GetDirectoryName(filePath) + "\\" + Path.GetFileNameWithoutExtension(filePath) + "_Slope";
-            if (!File.Exists(slopeFilePath)) return;
-
-            string[] slopeFileContents;
-            try
-            {
-                slopeFileContents = File.ReadAllLines(slopeFilePath);
-            }
-            catch (Exception ex)
-            {
-                throw new System.Exception("Error: Could not read RDE slope file. Original error: " + ex.Message);
-            }
-
-            if (slopeFileContents != null && slopeFileContents.Length - 1 == fileContents.Length - startOfData)
-            {
-                double[] gradient = new double[slopeFileContents.Length - 1];
-                for (int i = 0; i < slopeFileContents.Length - 1; i++)
-                {
-                    gradient[i] = Convert.ToDouble(slopeFileContents[i + 1].Split('\t')[1]) / 100;
-                }
-
-                var traceVectors = newTrace.Vectors.ToList();
-                var gradientVector = new TypedVectorData<double>();
-                gradientVector.Data = gradient.Cast<object>().ToArray();
-                gradientVector.Name = "Gradient";
-                gradientVector.Unit = "%";
-                traceVectors.Add(gradientVector);
-                newTrace.Vectors = traceVectors.ToArray();
-            }
-
+            return new FileContents(fileLines);
         }
 
-        private void SetTraceVectorDataFromCSV(Trace newTrace, string filePath)
+        #endregion
+
+        #region VETS
+
+        private void CreateEntities()
         {
-            string[] fileContents = File.ReadAllLines(filePath);
-            int startOfData = fileContents.Length;
-            int timeIndex = -1;
-            int speedIndex = -1;
-            double speedMod;
-
-            for (int i = 0; i < fileContents.Length; i++)
+            if (_filePaths != null && _filePaths.Count > 0)
             {
-                if (fileContents[i].Contains("Relative_time") && fileContents[i].Contains("OBD_VehicleSpeed"))
+                List<string> traceNames = new List<string>();
+                List<string> testProcedureNames = new List<string>();
+                List<string> shiftTableNames = new List<string>();
+                List<string> shiftListNames = new List<string>();
+
+                foreach (string filePath in _filePaths)
                 {
-                    for (int j = 0; j < fileContents[i].Split(',').Length; j++)
-                    {
-                        if (String.Compare(fileContents[i].Split(',')[j], "Relative_time") == 0) timeIndex = j;
-                        else if (String.Compare(fileContents[i].Split(',')[j], "OBD_VehicleSpeed") == 0) speedIndex = j;
-                    }
-                    startOfData = i + 1;
-                    break;
+                    Trace newTrace = new Trace();
+                    TestProcedure newTestProcedure = new TestProcedure();
+                    ShiftTable newShiftTable = new ShiftTable(); ;
+                    ShiftList newShiftList = new ShiftList();
+
+                    string baseName = GetNameFromPath(filePath);
+                    FileContents fileContents = GetFileContents(filePath);
+                    List<TraceColumn> columnData = new List<TraceColumn>();
+
+                    string predictedTraceName = ExtendedEntityManager.PredictEntityName<Trace>(baseName + " Trace", traceNames);
+                    string predictedTestProcedureName = ExtendedEntityManager.PredictEntityName<TestProcedure>(baseName + " Test Procedure", testProcedureNames);
+                    string predictedShiftTableName = ExtendedEntityManager.PredictEntityName<ShiftTable>(baseName + " Shift Table", shiftTableNames);
+                    string predictedShiftListName = ExtendedEntityManager.PredictEntityName<ShiftList>(baseName + " Shift List", shiftListNames);
+
+                    traceNames.Add(predictedTraceName);
+                    testProcedureNames.Add(predictedTestProcedureName);
+                    shiftTableNames.Add(predictedShiftTableName);
+                    shiftListNames.Add(predictedShiftListName);
+
+                    SetTraceData(ref newTrace, ref columnData, fileContents, predictedTraceName);
+                    SetTestProcedureData(ref newTestProcedure, predictedTestProcedureName, predictedTraceName);
+                    SetShiftTableData(ref newShiftTable, columnData, fileContents, predictedShiftTableName, predictedTraceName);
+                    SetShiftListData(ref newShiftList, predictedShiftListName, predictedTestProcedureName, predictedShiftTableName);
+
+                    MEF.EntityManagerView.Traces.Value.Create(ExtendedEntityManager.GetEntityURI<Trace>(), newTrace.Properties);
+                    MEF.EntityManagerView.TestProcedures.Value.Create(ExtendedEntityManager.GetEntityURI<TestProcedure>(), newTestProcedure.Properties);
+                    MEF.EntityManagerView.ShiftTables.Value.Create(ExtendedEntityManager.GetEntityURI<ShiftTable>(), newShiftTable.Properties);
+                    MEF.EntityManagerView.ShiftLists.Value.Create(ExtendedEntityManager.GetEntityURI<ShiftList>(), newShiftList.Properties);
+
+                    ShowDialog(predictedTraceName, predictedTestProcedureName, predictedShiftTableName, predictedShiftListName);
+
+                    //if (filePath == _filePaths.Last())
+                    //{
+                    //    Thread newThread = new Thread(x => ShowImportedTrace(predictedTraceName)) { IsBackground = true };
+                    //    newThread.Start();
+                    //}
+                }
+            }
+        }
+
+        private void SetTraceData(ref Trace newTrace, ref List<TraceColumn> columnData, FileContents fileContents, string name)
+        {
+            for (int i = 0; i < fileContents.NamesSplit.Length; i++)
+            {
+                if (fileContents.NamesSplit[i].Contains("time")) columnData.Add(new TraceColumn("Time", "s", i, fileContents.DataLength, fileContents.UnitsSplit[i]));
+                else if (fileContents.NamesSplit[i].Contains("speed")) columnData.Add(new TraceColumn("Speed", "km/h", i, fileContents.DataLength, fileContents.UnitsSplit[i]));
+                else if (fileContents.NamesSplit[i].Contains("slope")) columnData.Add(new TraceColumn("Gradient", "%", i, fileContents.DataLength, fileContents.UnitsSplit[i]));
+                else if (fileContents.NamesSplit[i].Contains("ambient-temperature")) columnData.Add(new TraceColumn("Temperature", "°C", i, fileContents.DataLength, fileContents.UnitsSplit[i]));
+                else if (fileContents.NamesSplit[i].Contains("ambient-humidity")) columnData.Add(new TraceColumn("RelativeHumidity", "%", i, fileContents.DataLength, fileContents.UnitsSplit[i]));
+            }
+
+            for (int i = 0; i < columnData.Count; i++)
+            {
+                for (int j = 0; j < fileContents.DataLength; j++)
+                {
+                    columnData[i].Data[j] = columnData[i].Units.Convert(Convert.ToDouble(fileContents.Lines[j + fileContents.DataIndex].Split(fileContents.Delimiter)[columnData[i].Index]));
                 }
             }
 
-            if (timeIndex < 0 || speedIndex < 0)
+            List<VectorData> vectorData = new List<VectorData>();
+            for (int i = 0; i < columnData.Count; i++)
             {
-                throw new System.Exception("Error: RDE csv file " + filePath + " does not contain time and speed information");
+                vectorData.Add(new TypedVectorData<double>());
+                vectorData[i].Data = columnData[i].Data.Cast<object>().ToArray();
+                vectorData[i].Name = columnData[i].Name;
+                vectorData[i].Unit = columnData[i].DisplayUnits;
             }
+            newTrace.Vectors = vectorData.ToArray();
+            newTrace.Name = name;
 
-            if (fileContents[startOfData - 2].Split(',')[speedIndex].Contains("mi/h")) speedMod = 2.23694;
-            else if (fileContents[startOfData - 2].Split(',')[speedIndex].Contains("m/s")) speedMod = 1;
-            else speedMod = 3.6;
-
-            double[] time = new double[fileContents.Length - startOfData];
-            double[] speed = new double[fileContents.Length - startOfData];
-
-            for (int i = 0; i < fileContents.Length - startOfData; i++)
-            {
-                time[i] = Convert.ToDouble(fileContents[i + startOfData].Split(',')[timeIndex]);
-                speed[i] = Convert.ToDouble(fileContents[i + startOfData].Split(',')[speedIndex]) / speedMod;
-            }
-
-            newTrace.Vectors[0].Data = time.Cast<object>().ToArray();
-            newTrace.Vectors[1].Data = speed.Cast<object>().ToArray();
         }
+
+        private void SetTestProcedureData(ref TestProcedure newTestProcedure, string name, string traceName)
+        {
+            TestProcedure templateTestProcedure = ExtendedEntityManager.DeserializeEntity<TestProcedure>(Properties.Resources.TestProcedure);
+            newTestProcedure.Blocks = templateTestProcedure.Blocks;
+            (newTestProcedure.Blocks[0] as DriveUnitBlock).TraceNames = new string[] { traceName };
+            newTestProcedure.Name = name;
+        }
+
+        private void SetShiftTableData(ref ShiftTable newShiftTable, List<TraceColumn> columnData, FileContents fileContents, string name, string traceName)
+        {
+            ShiftTable templateShiftTableAutomatic = ExtendedEntityManager.DeserializeEntity<ShiftTable>(Properties.Resources.ShiftTableA);
+            ShiftTable templateShiftTableManual = ExtendedEntityManager.DeserializeEntity<ShiftTable>(Properties.Resources.ShiftTableM);
+
+            int gearIndex = -1;
+            bool isAutomatic = true;
+
+            for (int i = 0; i < fileContents.NamesSplit.Length; i++)
+            {
+                if (fileContents.NamesSplit[i].Contains("gear")) gearIndex = i;
+            }
+
+            if (gearIndex >= 0)
+            {
+                for (int i = fileContents.DataIndex; i < fileContents.DataLength + fileContents.DataIndex; i++)
+                {
+                    string thisGear = fileContents.Lines[i].Split(fileContents.Delimiter)[gearIndex];
+                    if(CaseInsensitiveContains(thisGear, "MANUAL"))
+                    {
+                        isAutomatic = false;
+                        break;
+                    }
+                    if (CaseInsensitiveContains(thisGear, "AUTOMATIC"))
+                    {
+                        isAutomatic = true;
+                        break;
+                    }
+                }
+            }
+
+            double[] timeData = columnData.FirstOrDefault(x => x.Name == "Time").Data;
+            if (isAutomatic)
+            {
+                double[] speedData = columnData.FirstOrDefault(x => x.Name == "Speed").Data;
+
+                int start = -1;
+                int end = speedData.Length - 1;
+                for(int i = 0; i < speedData.Length; i++)
+                {
+                    if (speedData[i] != 0 && start < 0) start = i - 1;
+                    if (speedData[i] != 0) end = i + 1;
+                }
+                if (start >= 5) start = start - 5;
+                else if (start < 0) start = 0;
+                if (end > speedData.Length - 1) end = speedData.Length - 1;
+
+                newShiftTable.MaximumGear = templateShiftTableAutomatic.MaximumGear;
+                newShiftTable.TransmissionType = templateShiftTableAutomatic.TransmissionType;
+                newShiftTable.Vectors = templateShiftTableAutomatic.Vectors;
+                newShiftTable.Vectors[0].Data = (new double[] { start, end }).Cast<object>().ToArray();
+            }
+            else
+            {
+                List<double> time = new List<double>();
+                List<string> gear = new List<string>();
+                List<bool> declutch = new List<bool>();
+                List<string> message = new List<string>();
+                for (int i = fileContents.DataIndex; i < fileContents.DataLength + fileContents.DataIndex; i++)
+                {
+                    string thisGear = fileContents.Lines[i].Split(fileContents.Delimiter)[gearIndex];
+                    if (thisGear != String.Empty)
+                    {
+                        thisGear = thisGear.Split('-').Last();
+                        if(TypeCast.IsInt(thisGear))
+                        {
+                            time.Add(timeData[i- fileContents.DataIndex]);
+                            gear.Add(thisGear);
+                            declutch.Add(false);
+                            message.Add(String.Empty);                           
+                        }
+                    }
+                }
+                newShiftTable.MaximumGear = TypeCast.ToInt(gear.Max());
+                newShiftTable.TransmissionType = templateShiftTableManual.TransmissionType;
+                newShiftTable.Vectors = templateShiftTableManual.Vectors;
+                newShiftTable.Vectors[0].Data = time.Cast<object>().ToArray();
+                newShiftTable.Vectors[1].Data = gear.Cast<object>().ToArray();
+                newShiftTable.Vectors[2].Data = declutch.Cast<object>().ToArray();
+                newShiftTable.Vectors[3].Data = message.Cast<object>().ToArray();
+            }
+
+            newShiftTable.TraceName = traceName;
+            newShiftTable.Name = name;
+        }
+
+        private void SetShiftListData(ref ShiftList newShiftList, string name, string testProcedureName, string shiftTableName)
+        {
+            newShiftList.TestProcedureName = testProcedureName;
+            newShiftList.ShiftTableNames = new string[] { shiftTableName };
+            newShiftList.Name = name;
+        }
+
+        private void ShowDialog(string traceName, string testProcedureName, string shiftTableName, string shiftListName)
+        {
+            SystemLogServices.DisplayMessageInVETSLog(String.Format("Importing Trace resource '{0}'.", traceName));
+            SystemLogServices.DisplayMessageInVETSLog(String.Format("Importing Test Procedure resource '{0}'.", testProcedureName));
+            SystemLogServices.DisplayMessageInVETSLog(String.Format("Importing Shift Table resource '{0}'.", shiftTableName));
+            SystemLogServices.DisplayMessageInVETSLog(String.Format("Importing Shift List resource '{0}'.", shiftListName));
+        }
+
+        private void ShowImportedTrace(string predictedTraceName)
+        {
+            while (!MEF.EntityQuery.Where<Trace>().Any(x => x.Name == predictedTraceName));
+            Thread.Sleep(100);
+            SwapView.Show<Trace>(predictedTraceName);
+        }
+
+        #endregion
+
+        #region Misc
+
+        private string GetNameFromPath(string filePath)
+        {
+            string name = Path.GetFileNameWithoutExtension(filePath);
+            foreach (char c in IllegalChars)
+            {
+                if (name.Contains(c.ToString()))
+                {
+                    name = name.Replace(c.ToString(), "");
+                }
+            }
+            return name;
+        }
+
+        private bool CaseInsensitiveContains(string source, string toCheck)
+        {
+            return source?.IndexOf(toCheck, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        #endregion
 
     }
 }

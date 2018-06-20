@@ -2,10 +2,8 @@
 using System.Configuration;
 using System.IO;
 using System.Security.Permissions;
-using System.Security.AccessControl;
-using System.Security.Principal;
 
-namespace STARS.Applications.VETS.Plugins.RDEImportTool
+namespace ToolsForReuse
 {
     public static class Config
     {
@@ -13,18 +11,13 @@ namespace STARS.Applications.VETS.Plugins.RDEImportTool
         public static bool ShowCase { get; private set; }
         public static string LogFilePath { get; private set; }
         public static string RDEToolPath { get; private set; }
-        public static bool IsUpdate { get; private set; }
-        public static string LastOpenedFilePath { get { return lastOpenedFilePath; } set { SetField("LastOpenedFilePath", value); } }
-        private static string lastOpenedFilePath;   
 
         private static void UpdateFields()
         {
             AskToRunExe = TypeCast.ToBool(AppConfig("AskToRunExe"));
             ShowCase = TypeCast.ToBool(AppConfig("ShowCase"));
-            LogFilePath = AppConfig("LogFilePath");
-            RDEToolPath = AppConfig("RDEToolPath");
-            IsUpdate = TypeCast.ToBool(AppConfig("IsUpdate"));
-            lastOpenedFilePath = AppConfig("LastOpenedFilePath");
+            LogFilePath = FormatPath(AppConfig("LogFilePath"));
+            RDEToolPath = FormatPath(AppConfig("RDEToolPath"));
         }
 
         [PermissionSet(SecurityAction.Demand, Name = "FullTrust")]
@@ -59,12 +52,20 @@ namespace STARS.Applications.VETS.Plugins.RDEImportTool
             }
         }
 
-        private static string FormatPath(string path)
+        private static string FormatPartialPath(string path)
         {
+            path = FormatPath(path);
             if (!path.EndsWith(@"\"))
             {
                 return path + @"\";
             }
+            return path;
+        }
+
+        private static string FormatPath(string path)
+        {
+            path = path.Replace("%HERE%", Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location));
+            path = path.Replace("%LOCALAPPDATA%", Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
             return path;
         }
 

@@ -9,6 +9,7 @@ using STARS.Applications.VETS.Interfaces;
 using STARS.Applications.VETS.Interfaces.Constants;
 using STARS.Applications.VETS.Interfaces.ViewModels.Attributes;
 using STARS.Applications.VETS.UI.Views.Commands.CommandBaseViews;
+using ToolsForReuse;
 
 namespace STARS.Applications.VETS.Plugins.RDEImportTool.ViewModels.Home
 {
@@ -23,7 +24,7 @@ namespace STARS.Applications.VETS.Plugins.RDEImportTool.ViewModels.Home
         /// Default constructor
         /// </summary>
         [ImportingConstructor]
-        public HomeViewCommandViewModel([Import(typeof(ImportData))] ImportData importData, IImageManager imageManager)
+        public HomeViewCommandViewModel([Import("RDEImportTool")] MEF mef, IImageManager imageManager)
         {
             DisplayName = Properties.Resources.DisplayName;
             DisplayInfo = new ExplorerDisplayInfo
@@ -33,6 +34,7 @@ namespace STARS.Applications.VETS.Plugins.RDEImportTool.ViewModels.Home
                 ExplorerImage16 = "/STARS.Applications.VETS.Plugins.RDEImportTool;component/Images/white_image_16.png"
             };
 
+            ImportData importData = new ImportData();
             Command = new RelayCommand(p => importData.Import());
         }
 
